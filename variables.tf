@@ -1,3 +1,37 @@
+variable "expected_bucket_owner" {
+  type        = string
+  default     = null
+  description = <<-EOT
+    Account ID of the expected bucket owner. 
+    More information: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-owner-condition.html
+  EOT
+}
+
+variable "grants" {
+  type = list(object({
+    id          = string
+    type        = string
+    permissions = list(string)
+    uri         = string
+  }))
+  default = []
+
+  description = <<-EOT
+    A list of policy grants for the bucket, taking a list of permissions.
+    Conflicts with `acl`. Set `acl` to `null` to use this.
+    Deprecated by AWS in favor of bucket policies.
+    Automatically disabled if `s3_object_ownership` is set to "BucketOwnerEnforced".
+    EOT
+  nullable    = false
+}
+
+variable "s3_object_ownership" {
+  type        = string
+  description = "Specifies the S3 object ownership control. Valid values are `ObjectWriter`, `BucketOwnerPreferred`, and 'BucketOwnerEnforced'."
+  default     = "BucketOwnerPreferred"
+  nullable    = false
+}
+
 variable "acl" {
   type        = string
   description = "The canned ACL to apply. We recommend log-delivery-write for compatibility with AWS services"

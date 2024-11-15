@@ -1,3 +1,17 @@
+locals {
+  acl_grants = var.grants == null ? [] : flatten(
+    [
+      for g in var.grants : [
+        for p in g.permissions : {
+          id         = g.id
+          type       = g.type
+          permission = p
+          uri        = g.uri
+        }
+      ]
+  ])
+}
+
 resource "aws_s3_bucket" "default" {
   #bridgecrew:skip=BC_AWS_S3_13:Skipping `Enable S3 Bucket Logging` check until bridgecrew will support dynamic blocks (https://github.com/bridgecrewio/checkov/issues/776).
   #bridgecrew:skip=CKV_AWS_52:Skipping `Ensure S3 bucket has MFA delete enabled` due to issue in terraform (https://github.com/hashicorp/terraform-provider-aws/issues/629).
@@ -200,3 +214,39 @@ resource "time_sleep" "wait_for_aws_s3_bucket_settings" {
   create_duration  = "30s"
   destroy_duration = "30s"
 }
+
+resource "aws_s3_bucket_acl" "default" {
+  count = module.this.enabled && var.s3_object_ownership != "BucketOwnerEnforced" ? 1 : 0
+
+  bucket                = join("", aws_s3_bucket.default.*.id)
+  expected_bucket_owner = var.expected_bucket_owner
+
+  # Conflicts with access_control_policy so this is enabled if no grants
+  acl = try(length(local.acl_grants), 0) == 0 ? var.acl : null
+
+  dynamic "access_control_policy" {
+    for_each = try(length(local.acl_grants), 0) == 0 || try(length(var.acl), 0) > 0 ? [] : [1]
+
+    content {
+      dynamic "grant" {
+        for_each = local.acl_grants
+
+        content {
+          grantee {
+            id   = grant.value.id
+            type = grant.value.type
+            uri  = grant.value.uri
+          }
+          permission = grant.value.permission
+        }
+      }
+
+      owner {
+        id = one(data.aws_canonical_user_id.default[*].id)
+      }
+    }
+  }
+  depends_on = [aws_s3_bucket_ownership_controls.default]
+}
+
+data "aws_canonical_user_id" "default" { count = module.this.enabled ? 1 : 0 }
